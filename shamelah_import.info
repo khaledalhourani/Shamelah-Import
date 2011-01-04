@@ -1,0 +1,5 @@
+; $Id$
+name = Shamelah Import
+description = Imports .bok Shamelah files into Drupal's book content type
+dependencies[] = book
+core = 7.x

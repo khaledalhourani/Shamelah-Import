@@ -1,0 +1,595 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Main file for the Shamelah Import module, which automatically imports .bok books into Drupal.
+ */
+
+/**
+ * Implementation of hook_permission().
+ */
+function shamelah_import_permission() {
+  return array(
+    'shamelah import' => array(
+      'title' => t('Import .bok files into Drupal Book'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function shamelah_import_menu() {
+  $items['admin/structure/shamelah_import'] = array(
+    'title' => 'Shamelah Import',
+    'description' => 'Shamelah Import.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('shamelah_import_form'),
+    'access arguments' => array('shamelah import'),
+    //'file' => 'shamelah.admin.inc',
+  );
+  return $items;
+}
+
+function shamelah_import_form($form, &$form_state) {
+  $form['upload'] = array(
+    '#type' => 'file',
+    '#title' => t('Shamelah file'),
+    '#description' => t('Upload .bok or .mdb Shamelah file to be imported.'),
+  );
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Import')
+  );
+
+  return $form;
+}
+
+function shamelah_import_form_validate($form, &$form_state) {
+  // If both fields are empty or filled, cancel.
+  if (empty($form_state['values']['upload']) == empty($_FILES['files']['name']['upload'])) {
+    form_set_error('remote', t('You must upload a file.'));
+  }
+}
+
+function shamelah_import_form_submit($form, &$form_state) {
+  $validators = array('file_validate_extensions' => array('bok mdb'));
+
+  if ($file = file_save_upload('upload', $validators)) {
+    // File upload was attempted.
+    $path = file_unmanaged_copy($file->uri);
+    $fullpath = drupal_realpath($path);
+
+    // Import the file, then remove it.
+    // @todo: better way to manage failure in import, maybe unlink later
+    shamelah_import_shamelah_to_book($fullpath);
+  }
+  else {
+    // File upload failed.
+    form_set_error('upload', t('The file could not be uploaded.'));
+  }
+}
+
+/**
+ * @param $fullpath
+ *   e.g. /var/www/alfahrs/sites/default/files/75.mdb
+ */
+function shamelah_import_shamelah_to_book($fullpath) {
+  $abs_path = dirname(__FILE__);
+  $convert = $abs_path . '/conver.sh ' . $fullpath;
+
+  shell_exec($convert);
+
+  // $path is the fullpath without $filename
+  $path = pathinfo($fullpath);
+
+  // @todo: error recovery in this workflow
+  try {
+    // drop first to make sure
+    shamelah_import_drop_shamelah_data_tables();
+    // creates temp tables for data migration
+    shamelah_import_create_shamelah_data_tables();
+  }
+  catch(PDOException $e) {
+    dpm($e->getMessage());
+    // @todo: do we return here? and what to return?
+  }
+  // imports data and put it in temp tables
+  shamelah_import_import_shamelah_book($path);
+  // drop temp tables after migration is done
+  shamelah_import_drop_shamelah_data_tables();
+}
+
+function shamelah_import_create_shamelah_data_tables() {
+  db_create_table('shamelah_book', shamelah_import_shamelah_book_schema());
+  db_create_table('shamelah_title', shamelah_import_shamelah_title_schema());
+}
+
+function shamelah_import_drop_shamelah_data_tables() {
+  db_drop_table('shamelah_book');
+  db_drop_table('shamelah_title');
+}
+
+function shamelah_import_shamelah_book_schema() {
+  return array(
+    'description' => 'Shamelah book table.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'Primary Key: Unique nass ID.',
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'nass' => array(
+        'description' => 'text or nass.',
+        'type' => 'text',
+        'size' => 'big',
+      ),
+      'part' => array(
+        'description' => 'Agzaa Al Ketab if the book parts.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'page' => array(
+        'description' => 'Page number, @todo: if it\'s not autonumbered, use this field.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'hno' => array(
+        'description' => 'Hadith number',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'Sora' => array(
+        'description' => 'Sora number in Quran',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'Aya' => array(
+        'description' => 'Aya number in Quran',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'na' => array(
+        'description' => 'Don\'t know what this supposed to mean',
+        'type' => 'varchar',
+        'length' => '32',
+        'not null' => FALSE,
+      ),
+    ),
+    'indexes' => array(
+      'page' => array('page'),
+    ),
+    'primary key' => array('id'),
+  );
+}
+
+function shamelah_import_shamelah_title_schema() {
+  return array(
+    'description' => 'Shamelah title table.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'Not unique id, related to book.id.',
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'tit' => array(
+        'description' => 'Title.',
+        'type' => 'varchar',
+        'length' => '32',
+        'not null' => FALSE,
+      ),
+      'lvl' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'sub' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+    ),
+    'indexes' => array(
+      'id' => array('id'),
+      'lvl' => array('lvl'),
+    ),
+  );
+}
+
+/**
+ *
+ * The main workflow of migrating shamelah data to Drupal
+ *
+ * Workflow has five steps:
+ *  1- Converts .mdb database into SQL inserts, the result
+ *     is usually two files `title` and `book`
+ *  2- Replace INSERT INTO oldTableName to INSERT INTO newTableName
+ *     to avoid collision with Drupal's tables e.g. `book`
+ *  3- Import SQL files into temp tables
+ *  4- Map temp tables into Book module table
+ *  5- Clean-up (Drop temp tables, remove files and dir)
+ *
+ * @return
+ *   TRUE if the whole process succeed
+ *
+ */
+function shamelah_import_import_shamelah_book($path) {
+  global $databases, $base_path;
+  $database = $databases['default']['default'];
+  $abs_path = dirname(__FILE__);
+  $mk_path = $abs_path . '/libs/mk-parallel-restore';
+  $data_path = $abs_path . '/data/';
+
+  // 1. converts .mdb to .bok
+  // @todo: check $out to see if there is any error
+  $convert = $abs_path . "/./converter.sh " . $path['dirname'] . '/' . $path['basename'];
+  $out = shell_exec($convert);
+
+  $dir = $path['dirname'] . '/' . $path['filename'];
+  $file_book = $dir . "/book.sql";
+  $file_title = $dir . "/title.sql";
+
+  if (!is_dir($dir) && file_exists($file_book) && file_exists($file_title)) {
+    return FALSE;
+  }
+
+  // 2. replace tables names
+  // replace book with shamelah_book
+  $replace_command = "sed -i 's/INSERT INTO book/INSERT INTO shamelah_book/g' " . $file_book;
+  $out = shell_exec($replace_command);
+  // replace book with shamelah_book
+  $replace_command = "sed -i 's/INSERT INTO title/INSERT INTO shamelah_title/g' " . $file_title;
+  shell_exec($replace_command);
+
+  // 3. Import into temp tables with maatkit
+  // Import book
+  $import_command = "perl " . $mk_path . " --host " . $database['host'] . " --user " . $database['username'] . " --password " .  $database['password'] . " --database " . $database['database'] . " " . $file_book;
+  $out = shell_exec($import_command);
+  // Import title
+  $import_command = "perl " . $mk_path . " --host " . $database['host'] . " --user " . $database['username'] . " --password " .  $database['password'] . " --database " . $database['database'] . " " . $file_title;
+  $out = shell_exec($import_command);
+
+  // 4. Map temp tables into Book module table
+  $cover_nid = shamelah_import_migrate($path['filename']);
+
+  // 5.Clean-up (remove files and dir)
+  $original_file = $path['dirname'] . '/' . $path['basename'];
+  $imported_dir = $path['dirname'] . '/shamelah_import';
+  if (!is_dir($imported_dir)) {
+    drupal_mkdir($imported_dir);
+  }
+  rename($original_file, $imported_dir . '/' . $path['basename']);
+  shamelah_import_log($path['basename'], $imported_dir . '/' . $path['basename'], $cover_nid);
+  #drupal_unlink($file_book);
+  #drupal_unlink($file_title);
+  #drupal_rmdir($dir);
+
+  // Redirects the user to the new book cover page
+  drupal_goto('node/' . $cover_nid);
+}
+
+/**
+ *
+ * Main migrate function, with the following workflow:
+ *  1- Get book name
+ *  2- Create book cover (main page)
+ *  3- Create titles and texts (nsoos)
+ *
+ */
+function shamelah_import_migrate($bid) {
+  $fields = array();
+
+  // Get book info
+  $book = shamelah_import_get_book_info($bid);
+
+  if (!empty($book)) {
+    $fields = shamelah_import_autotag($book);
+  }
+  else {
+    $book = new StdClass();
+    $book->title = $bid;
+    $book->betaka = '';
+  }
+
+  $signature = "\n\nالكتاب مستورد بشكل آلي من المكتبة الشاملة.";
+  $book->betaka .= $signature;
+
+  // Create new book, let's name it cover
+  $cover = shamelah_import_create_new_book($book->bk, $book->betaka, $fields);
+
+  // Create pages
+  $fields = array();
+  $ids = shamelah_import_get_title_ids();
+  $counter = 0;
+
+  while ($counter < count($ids)) {
+    // Get page title, it's `lvl` = 1 from the {title} table
+    $title_text = shamelah_import_get_title($ids[$counter]);
+
+    $query = db_select('shamelah_book', 'shamelah_book')
+      ->fields('shamelah_book', array('id', 'nass', 'part', 'page', 'hno'));
+
+    // we haven't reached the last item
+    if (isset($ids[$counter + 1])) {
+      $start_id = $ids[$counter];
+      $end_id = $ids[$counter + 1] - 1;
+
+      if ($start_id == $end_id) {
+        $query->condition('id', $start_id);
+      }
+      elseif ($start_id < $end_id) {
+        $query->condition('id', array($start_id, $end_id), 'BETWEEN');
+      }
+    }
+    else {
+      $start_id = $ids[$counter];
+      $query->condition('id', $start_id, '>=');
+    }
+
+    $result = $query->execute()->fetchAll();
+    $body = '';
+    foreach ($result as $item) {
+      $body .= $item->nass . "\n";
+    }
+
+    // use the loop counter for pages' weight
+    $weight = ++$counter;
+
+    $title = shamelah_import_create_book_page($title_text, $body, $cover->book['mlid'], $cover->book['bid'], $weight);
+  }
+
+  return $cover->nid;
+}
+
+function shamelah_import_get_title($id) {
+  $query = db_select('shamelah_title', 'shamelah_title');
+  $results = $query
+    ->fields('shamelah_title', array('tit'))
+    ->condition('id', $id)
+    ->range(0, 1)
+    ->execute();
+
+  foreach ($results as $title) {
+    return $title->tit;
+  }
+}
+
+/**
+ * Get book info from {shamelah_import_books} table
+ *
+ * @todo: can we do that with joins?!
+ *
+ */
+function shamelah_import_get_book_info($bid) {
+  // Get book info
+  $query = db_select('shamelah_import_books', 'shamelah_import_books');
+  $results = $query
+    ->fields('shamelah_import_books', array('bk', 'cat', 'betaka', 'inf', 'authno'))
+    ->condition('bkid', $bid)
+    ->range(0, 1)
+    ->execute();
+
+  $book = array();
+  foreach ($results as $item) {
+    $book = $item;
+  }
+
+  // Get book category
+  if (!empty($book->cat)) {
+    $query = db_select('shamelah_import_categories', 'shamelah_import_categories');
+    $results = $query
+      ->fields('shamelah_import_categories', array('name'))
+      ->condition('id', $book->cat)
+      ->range(0, 1)
+      ->execute();
+
+    foreach ($results as $item) {
+      $book->cat = $item->name;
+    }
+  }
+
+  // Get book author
+  if (!empty($book->authno)) {
+    $query = db_select('shamelah_import_authors', 'shamelah_import_authors');
+    $results = $query
+      ->fields('shamelah_import_authors', array('auth', 'inf'))
+      ->condition('authid', $book->authno)
+      ->range(0, 1)
+      ->execute();
+
+    foreach ($results as $item) {
+      $book->authno = $item;
+    }
+  }
+
+  return $book;
+}
+
+/**
+ * Tag book based on category and author
+ */
+function shamelah_import_autotag($book) {
+  $fields = array();
+  $vocabularies = taxonomy_vocabulary_get_names();
+  $shamelah_vocabularies = array(
+    'cat' => array(
+      'vocabulary_name' => 'Categories',
+      'vocabulary_machine_name' => 'categories',
+      'description' => 'Books categories',
+      'term_field' => 'category',
+    ),
+    'authno' => array(
+      'vocabulary_name' => 'Authors',
+      'vocabulary_machine_name' => 'authors',
+      'description' => 'Books authors',
+      'term_field' => 'author',
+    ),
+  );
+
+  foreach ($shamelah_vocabularies as $key => $shamelah_vocabulary) {
+    if (empty($book->$key)) {
+      continue;
+    }
+
+    $vocabulary_machine_name = $shamelah_vocabulary['vocabulary_machine_name'];
+    $vocabulary_name = $shamelah_vocabulary['vocabulary_name'];
+
+    if (isset($vocabularies[$vocabulary_machine_name])) {
+      $vocabulary = $vocabularies[$vocabulary_machine_name];
+    }
+    else {
+      $edit = array(
+        'name' => $vocabulary_name,
+        'machine_name' => $vocabulary_machine_name,
+        'description' => $shamelah_vocabulary['description'],
+        'module' => 'shamelah_import',
+      );
+      $vocabulary = (object) $edit;
+      taxonomy_vocabulary_save($vocabulary);
+    }
+
+    $term = shamelah_import_link_taxonomy($vocabulary->vid, $book->$key);
+    $field_name = 'field_' . $shamelah_vocabulary['term_field'];
+    $fields[$field_name] = $term;
+  }
+
+  return $fields;
+}
+
+/**
+ * Get term, or create it if not exsist
+ */
+function shamelah_import_link_taxonomy($vid, $term) {
+  $conditions = array('name' => $term, 'vid' => $vid);
+  if ($possibilities = entity_load('taxonomy_term', array(), $conditions)) {
+    $term = array_pop($possibilities);
+  }
+  else {
+    $vocabulary = taxonomy_vocabulary_load($vid);
+    // Create a default forum so forum posts can be created.
+    $edit = array(
+      'name' => t($term),
+      'description' => '',
+      'parent' => array(0),
+      'vid' => $vocabulary->vid,
+    );
+    $term = (object) $edit;
+    taxonomy_term_save($term);
+  }
+
+  return $term;
+}
+
+/**
+ * Get distinct ids from title table
+ */
+function shamelah_import_get_title_ids() {
+  $ids = array();
+  $query = db_select('shamelah_title', 'shamelah_title');
+  $result = $query
+    ->fields('shamelah_title', array('id'))
+    ->condition('lvl', 1)
+    ->distinct()
+    ->execute();
+
+  foreach ($result as $row) {
+    $ids[] = $row->id;
+  }
+  return $ids;
+}
+
+function shamelah_import_generate() {
+  $title = 'example book';
+  $body = 'example book content';
+
+  shamelah_import_create_book($title, $body);
+}
+
+function shamelah_import_create_new_book($title, $body = NULL, $fields = array()) {
+  $lang = 'ar';
+  $node = shamelah_import_book_template($lang);
+
+  $node->title = $title;
+  $node->body[$lang][0]['value'] = $body;
+
+  // Handle taxonomy terms: category and author
+  foreach ($fields as $name => $value) {
+    $field_name = $name;
+    $node->{$field_name}[$lang][0]['tid'] = $value->tid;
+    $node->{$field_name}[$lang][0]['taxonomy_term'] = $value;
+  }
+
+  $node->book['weight'] = 0;
+
+  // Only for the eyes of the new book!
+  $node->book['mlid'] = 0; // always set to 0, will be autonumbered on create
+  $node->book['plid'] = -1; // parent link id from ['mlid'], if cover -1
+  $node->book['bid'] = 'new'; // if cover new, else book id (cover id)
+
+  if ($node = node_submit($node)) {
+    node_save($node);
+  }
+
+  return $node;
+}
+
+function shamelah_import_create_book_page($title, $body = NULL, $plid, $bid, $weight = 0) {
+  $lang = 'ar';
+  $node = shamelah_import_book_template($lang);
+
+  $node->title = $title;
+  $node->body[$lang][0]['value'] = $body;
+
+  $node->book['weight'] = $weight;
+
+  $node->book['mlid'] = 0; // always set to 0, will be autonumbered on create
+  $node->book['plid'] = $plid; // parent link id from ['mlid'], if cover -1
+  $node->book['bid'] = $bid; // if cover new, else book id (cover id)
+
+  if ($node = node_submit($node)) {
+    node_save($node);
+  }
+
+  return $node;
+}
+
+function shamelah_import_book_template($lang = 'ar') {
+  global $user;
+  $type = 'book';
+  $node = new StdClass();
+
+  $node->uid = $user->uid;
+  $node->name = $user->name;
+  $node->language = $lang;
+  $node->type = $type;
+
+  $node->book['menu_name'] = '';
+  $node->book['nid'] = 'new';
+  $node->book['router_path'] = 'node/%';
+  $node->book['has_children'] = 0;
+  $node->book['options'] = array();
+  $node->book['module'] = 'book';
+  $node->book['original_bid'] = 0;
+  $node->book['parent_depth_limit'] = 8;
+  $node->book['pick-book'] = 'Change book (update list of parents)';
+
+  return $node;
+}
+
+/**
+ * Log imported books
+ */
+function shamelah_import_log($filename, $filepath, $nid) {
+  global $user;
+  $fields = array(
+    'filename' => $filename,
+    'filepath' => $filepath,
+    'nid' => $nid,
+    'uid' => $user->uid,
+  );
+
+  db_insert('shamelah_import_log')
+    ->fields($fields)
+    ->execute();
+}

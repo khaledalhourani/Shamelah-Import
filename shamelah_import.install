@@ -1,0 +1,333 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * Install, update and uninstall functions for Shamelah Import module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function shamelah_import_schema() {
+  $schema['shamelah_import_books'] = array(
+    'description' => 'The base table for books index.',
+    'fields' => array(
+      'bkid' => array(
+        'description' => 'The primary identifier for a book.',
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'bk' => array(
+        'description' => 'The book title.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'cat' => array(
+        'description' => 'The {0cat}.id of this book.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'betaka' => array(
+        'description' => 'Book Description or Betaka.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'inf' => array(
+        'description' => 'More info on this book.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'bkord' => array(
+        'description' => 'Book order.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'authno' => array(
+        'description' => 'Author id.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'auth' => array(
+        'description' => 'Author of this book.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'AuthInf' => array(
+        'description' => 'Author info.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'Max' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'NoSr' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'Comp' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'IslamShort' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'TafseerNam' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'Idx' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'Archive' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'oNum' => array(
+        'description' => 'Bool to detect if the book an official book from AlShamela.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'oVer' => array(
+        'description' => 'Book version, only from official books.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'bVer' => array(
+        'description' => 'Book Version.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'seal' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'oAuth' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'Pdf' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'PdfCs' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'NoSel' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'NoTaf' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'verName' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'Iso' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'bLnk' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+    ),
+    'indexes' => array(
+      'bk' => array('bk'),
+      'cat' => array('cat'),
+    ),
+    'primary key' => array('bkid'),
+    'foreign keys' => array(
+      'book_category' => array(
+        'table' => 'shamelah_import_categories',
+        'columns' => array('cat' => 'id'),
+      ),
+      'author_of_the_book' => array(
+        'table' => 'shamelah_import_authors',
+        'columns' => array('authno' => 'authid'),
+      ),
+    ),
+  );
+
+  $schema['shamelah_import_categories'] = array(
+    'description' => 'Books categories.',
+    'fields' => array(
+      'id' => array(
+        'description' => 'Category ID.',
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+      'catord' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'Lvl' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+    ),
+    'primary key' => array('id'),
+    'foreign keys' => array(
+      'category' => array(
+        'table' => 'shamelah_import_books',
+        'columns' => array('id' => 'cat'),
+      ),
+    ),
+  );
+
+  $schema['shamelah_import_authors'] = array(
+    'description' => 'Auhtors list and info.',
+    'fields' => array(
+      'authid' => array(
+        'description' => 'Author ID.',
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'auth' => array(
+        'description' => 'Author name.',
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+      ),
+      'inf' => array(
+        'description' => 'Author information.',
+        'type' => 'text',
+        'size' => 'big',
+      ),
+      'oVer' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'oNum' => array(
+        'type' => 'int',
+        'not null' => FALSE,
+      ),
+      'seal' => array(
+        'type' => 'varchar',
+        'length' => '32',
+        'not null' => FALSE,
+      ),
+      'AD' => array(
+        'type' => 'varchar',
+        'length' => '32',
+        'not null' => FALSE,
+      ),
+      'Lng' => array(
+        'type' => 'varchar',
+        'length' => '32',
+        'not null' => FALSE,
+      ),
+      'HigriD' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => FALSE,
+      ),
+    ),
+    'primary key' => array('authid'),
+    'foreign keys' => array(
+      'author_books' => array(
+        'table' => 'shamelah_import_books',
+        'columns' => array('authid' => 'authno'),
+      ),
+    ),
+  );
+
+  $schema['shamelah_import_log'] = array(
+    'description' => 'Log imported books.',
+    'fields' => array(
+      'id' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'log ID, defined by the database.',
+      ),
+      'filename' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+      ),
+      'filepath' => array(
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+      ),
+      'nid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('id'),
+    'foreign keys' => array(
+      'category' => array(
+        'table' => 'node',
+        'columns' => array('nid' => 'nid'),
+      ),
+      'category' => array(
+        'table' => 'users',
+        'columns' => array('uid' => 'uid'),
+      ),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function shamelah_import_install() {
+  // Insert default data
+  // @todo: handle import failure, and stop the module enable process
+  shamelah_import_insert_default_data();
+}
+
+function shamelah_import_insert_default_data() {
+  global $databases, $base_path;
+  $database = $databases['default']['default'];
+  $abs_path = dirname(__FILE__);
+  $mk_path = $abs_path . '/libs/mk-parallel-restore';
+  $data_path = $abs_path . '/data/';
+
+  $tables = array('authors', 'books', 'categories');
+  foreach ($tables as $table) {
+    $table = $table . '.sql';
+    $import_command = "perl " . $mk_path . " --host " . $database['host'] . " --user " . $database['username'] . " --password " .  $database['password'] . " --database " . $database['database'] . " " . $data_path . $table;
+    $out = shell_exec($import_command);
+
+    print '<div class="results">' . $out .'</div>';
+  }
+}
